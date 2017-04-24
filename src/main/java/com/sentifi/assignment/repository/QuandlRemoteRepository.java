@@ -10,7 +10,10 @@ import com.sentifi.assignment.domain.DataSet;
 import com.sentifi.assignment.domain.Ticker;
 import com.sentifi.assignment.exceptions.DataAccessException;
 import com.sentifi.assignment.exceptions.ResourceNotFoundException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 
 import java.io.IOException;
 import java.text.SimpleDateFormat;
@@ -22,11 +25,15 @@ import java.text.SimpleDateFormat;
 @org.springframework.stereotype.Repository(value = "QuandlRemoteRepository")
 public class QuandlRemoteRepository extends AbstractRepository {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(QuandlRemoteRepository.class);
+
     @Value("${api.baseUrl}") String baseUrl;
 
     @Value("${api.endPoint}") String apiEndPoint;
 
+
     @Override
+    @Cacheable(cacheNames = "allTickerCache",  key = "#symbol")
     public Ticker findBySymbol(String symbol) {
         final String apiUrl = baseUrl + apiEndPoint + "/" + symbol + ".json";
         GetRequest getRequest = Unirest.get(apiUrl);
@@ -35,12 +42,14 @@ public class QuandlRemoteRepository extends AbstractRepository {
             DataSet dataSet = load(symbol, httpResponseStr.getBody());
             return getTicketData(symbol, dataSet);
         } catch (UnirestException e) {
+            LOGGER.error(String.format("Error finding symbol %s", symbol), e);
             throw new DataAccessException(e);
         }
     }
 
     private DataSet load(String symbol, String content) {
         if(content == null){
+            LOGGER.info(String.format("No content for symbol %s", symbol));
             throw new DataAccessException("Missing data for symbol");
         }
         try {
@@ -50,6 +59,7 @@ public class QuandlRemoteRepository extends AbstractRepository {
 
             return mapper.readValue(content, DataSet.class);
         } catch (DataAccessException | IOException e) {
+            LOGGER.error(String.format("Error finding symbol %s", symbol), e);
             throw new ResourceNotFoundException(String.format("%s Symbol not found", symbol), e);
         }
     }

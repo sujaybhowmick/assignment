@@ -6,6 +6,8 @@ import com.sentifi.assignment.domain.Ticker;
 import com.sentifi.assignment.domain.TickerData;
 import com.sentifi.assignment.exceptions.DataAccessException;
 import com.sentifi.assignment.exceptions.ResourceNotFoundException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -21,17 +23,18 @@ import java.util.stream.Collectors;
  * Created by Sujay on 4/11/17.
  */
 @Service
-public class TickerServiceImpl extends CachedTickerService {
+public class TickerServiceImpl implements TickerService{
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(TickerServiceImpl.class);
 
     private static final int NUMBER_OF_DAYS = -200;
     private static final int MAX_NUMBER_OF_SYMBOLS = 1000;
-    private static final int API_CACHE_SIZE = 1000;
 
     private com.sentifi.assignment.repository.Repository repository;
 
     @Autowired
     public TickerServiceImpl(@Qualifier("QuandlRemoteRepository")com.sentifi.assignment.repository.Repository repository){
-        super(API_CACHE_SIZE);
+
         this.repository = repository;
     }
 
@@ -42,17 +45,15 @@ public class TickerServiceImpl extends CachedTickerService {
             LocalDate sDate = LocalDate.parse(startDate);
             LocalDate eDate = LocalDate.parse(endDate);
 
-            Ticker ticker = this.lruCache.get(symbol);
-            if (ticker == null) {
-                ticker = this.repository.findBySymbol(symbol);
-                this.lruCache.set(symbol, ticker);
-            }
+            Ticker ticker = this.repository.findBySymbol(symbol);
+
             List<TickerData> tickerDataList = ticker.getTickerData().stream()
                     .filter(t -> t.getDate().compareTo(eDate) >= 0 && t.getDate().compareTo(sDate) <= 0)
                     .collect(Collectors.toList());
 
             return getClosePriceJSONResponse(symbol, tickerDataList);
         }catch (Exception e){
+            LOGGER.error(String.format("Error getting close price for symbol %s", symbol), e);
             throw new ResourceNotFoundException(e);
         }
 
@@ -81,6 +82,7 @@ public class TickerServiceImpl extends CachedTickerService {
             jsonGenerator.close();
             return stringWriter.toString();
         }catch(IOException e){
+            LOGGER.error(String.format("closePrice: Error generating JSON Response for symbol %s", symbol), e);
             throw new DataAccessException(e);
         }
     }
@@ -88,12 +90,9 @@ public class TickerServiceImpl extends CachedTickerService {
     public String dma200(String symbol, String startDate) {
 
         LocalDate sDate = LocalDate.parse(startDate);
-        Ticker ticker = this.lruCache.get(symbol);
-        if(ticker == null){
-            ticker = this.repository.findBySymbol(symbol);
-            this.lruCache.set(symbol, ticker);
 
-        }
+        Ticker ticker = this.repository.findBySymbol(symbol);
+
         Double dma = calculateDma200(sDate, sDate.plusDays(NUMBER_OF_DAYS), ticker);
 
         return getDma200JSONResponse(symbol, dma);
@@ -109,12 +108,9 @@ public class TickerServiceImpl extends CachedTickerService {
             jsonGenerator.writeArrayFieldStart("200dma");
             for (int index = 0; index < symbols.length && index < MAX_NUMBER_OF_SYMBOLS; index++) {
                 final String symbol = symbols[index];
-                Ticker ticker = this.lruCache.get(symbol);
-                if(ticker == null){
-                    ticker = this.repository.findBySymbol(symbol);
-                    this.lruCache.set(symbol, ticker);
 
-                }
+                Ticker ticker = this.repository.findBySymbol(symbol);
+
                 Double dma = calculateDma200(sDate, sDate.plusDays(NUMBER_OF_DAYS), ticker);
                 jsonGenerator.writeStartObject();
                 jsonGenerator.writeStringField("Ticker", symbol);
@@ -126,6 +122,7 @@ public class TickerServiceImpl extends CachedTickerService {
             jsonGenerator.close();
             return stringWriter.toString();
         }catch (IOException e){
+            LOGGER.error("dma200bulk: Error generating JSON Response", e);
             throw new DataAccessException(e);
         }
     }
@@ -142,6 +139,7 @@ public class TickerServiceImpl extends CachedTickerService {
             jsonGenerator.writeEndObject();
             jsonGenerator.close();
         }catch(IOException e){
+            LOGGER.error(String.format("dma200: Error generating JSON Response for symbol %s", symbol), e);
             throw new DataAccessException(e);
         }
 
