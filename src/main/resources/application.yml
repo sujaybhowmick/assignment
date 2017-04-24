@@ -1,0 +1,11 @@
+server:
+  port: 8080
+  context-path: /api
+spring:
+  profiles:
+    active: default
+api:
+  baseUrl: "https://www.quandl.com"
+  endPoint: "/api/v3/datasets/WIKI"
+  cacheSize: 1000
+
